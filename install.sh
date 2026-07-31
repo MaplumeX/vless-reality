@@ -105,9 +105,14 @@ validate_address() {
   [[ "$address" =~ ^[A-Za-z0-9:.-]+$ ]]
 }
 
+has_tty() {
+  { : </dev/tty && : >/dev/tty; } 2>/dev/null
+}
+
 prompt_domain() {
   while [[ -z "$reality_domain" ]]; do
-    read -r -p "请输入 REALITY 伪装域名（例如 www.example.com）: " reality_domain
+    has_tty || die "无法读取交互输入；请使用 --domain 指定 REALITY 域名。"
+    read -r -p "请输入 REALITY 伪装域名（例如 www.example.com）: " reality_domain </dev/tty
     reality_domain="${reality_domain%.}"
     if ! validate_domain "$reality_domain"; then
       warn "域名格式不正确，请不要包含 https://、端口或路径。"
@@ -149,9 +154,9 @@ detect_public_address() {
     return
   fi
 
-  if [[ -t 0 ]]; then
+  if has_tty; then
     while [[ -z "$server_address" ]]; do
-      read -r -p "无法自动探测公网地址，请输入服务器公网 IP 或域名: " server_address
+      read -r -p "无法自动探测公网地址，请输入服务器公网 IP 或域名: " server_address </dev/tty
       if ! validate_address "$server_address"; then
         warn "服务器地址格式不正确。"
         server_address=""
@@ -166,13 +171,13 @@ confirm_overwrite() {
   [[ -s "$CONFIG_FILE" ]] || return
   [[ "$force" == "true" ]] && return
 
-  if [[ ! -t 0 ]]; then
+  if ! has_tty; then
     die "已存在 Xray 配置；如需覆盖，请添加 --force。"
   fi
 
   local answer=""
   warn "检测到已有配置：${CONFIG_FILE}。继续会生成新凭据，并使旧导入链接失效。"
-  read -r -p "确认备份并覆盖吗？[y/N] " answer
+  read -r -p "确认备份并覆盖吗？[y/N] " answer </dev/tty
   [[ "$answer" =~ ^[Yy]$ ]] || die "已取消。"
 }
 

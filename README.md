@@ -48,11 +48,10 @@ VLESS + TCP/REALITY + XTLS Vision 节点配置。运行结束后会直接输出�
 
 ## 快速开始
 
+直接运行：
+
 ```bash
-git clone https://github.com/MaplumeX/vless-reality.git
-cd vless-reality
-chmod +x install.sh
-sudo ./install.sh
+curl -fsSL https://raw.githubusercontent.com/MaplumeX/vless-reality/main/install.sh | sudo bash
 ```
 
 根据提示输入 REALITY 目标域名，例如：
@@ -62,6 +61,16 @@ sudo ./install.sh
 ```
 
 这里只填写域名，不要包含 `https://`、端口、路径或通配符。
+
+如果服务器上还没有安装 `curl`，可以先安装：
+
+```bash
+# Debian / Ubuntu
+sudo apt-get update && sudo apt-get install -y curl
+
+# CentOS / RHEL / Fedora
+sudo dnf install -y curl
+```
 
 安装成功后，脚本会显示：
 
@@ -91,14 +100,23 @@ sudo ./install.sh
 非交互安装示例：
 
 ```bash
-sudo ./install.sh \
-  --domain www.example.com \
-  --address 203.0.113.10 \
-  --force
+curl -fsSL https://raw.githubusercontent.com/MaplumeX/vless-reality/main/install.sh |
+  sudo bash -s -- \
+    --domain www.example.com \
+    --address 203.0.113.10 \
+    --force
 ```
 
 `--address` 可以省略，脚本会通过公网服务探测服务器地址。自动探测失败且当前是
 交互式终端时，脚本会要求手动输入。
+
+也可以克隆仓库后运行：
+
+```bash
+git clone https://github.com/MaplumeX/vless-reality.git
+cd vless-reality
+sudo ./install.sh
+```
 
 如果已经存在 Xray 配置，交互模式会要求确认后再覆盖；非交互模式必须显式添加
 `--force`。每次重新运行都会生成新的 UUID、密钥和 Short ID，原导入链接将随之
