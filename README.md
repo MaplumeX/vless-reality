@@ -1,13 +1,14 @@
 # VLESS + REALITY 一键安装脚本
 
-在使用 systemd 的 Linux 服务器上安装 Xray，并生成一套
-VLESS + TCP/REALITY + XTLS Vision 节点配置。运行结束后会直接输出可供客户端
-导入的 `vless://` 链接。
+在 Linux 服务器上安装 Xray，并生成一套 VLESS + TCP/REALITY + XTLS Vision
+节点配置。支持 systemd 发行版和使用 OpenRC 的 Alpine Linux，运行结束后会直接
+输出可供客户端导入的 `vless://` 链接。
 
 ## 功能
 
 - 使用 [XTLS/Xray-install](https://github.com/XTLS/Xray-install) 官方脚本安装或升级
   Xray；
+- 自动识别 systemd 或 Alpine/OpenRC；Alpine 使用 XTLS 官方 Alpine 安装器；
 - 由用户指定 REALITY 目标域名；
 - 自动生成 UUID、X25519 密钥对和 8 字节 Short ID；
 - 自动探测服务器公网 IPv4，IPv4 不可用时尝试 IPv6；
@@ -37,14 +38,14 @@ VLESS + TCP/REALITY + XTLS Vision 节点配置。运行结束后会直接输出�
 
 ## 环境要求
 
-- 使用 systemd 的 Linux 发行版；
+- 使用 systemd 的 Linux 发行版，或使用 OpenRC 的 Alpine Linux；
 - root 或 sudo 权限；
+- Bash；
 - 服务器能够访问 GitHub；
 - TCP 443 没有被 Nginx、Caddy、Apache 等其他服务占用；
 - 云厂商安全组和外部防火墙允许 TCP 443 入站。
 
-脚本会在缺少依赖时通过 `apt-get`、`dnf`、`yum` 或 `zypper` 安装 `curl`、
-`openssl` 和 CA 证书。
+脚本支持通过 `apk`、`apt-get`、`dnf`、`yum` 或 `zypper` 安装所需依赖。
 
 ## 快速开始
 
@@ -52,6 +53,14 @@ VLESS + TCP/REALITY + XTLS Vision 节点配置。运行结束后会直接输出�
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MaplumeX/vless-reality/main/install.sh | sudo bash
+```
+
+Alpine 默认可能没有 Bash 和 curl，可用一条命令补齐依赖并安装：
+
+```bash
+sudo apk add --no-cache bash curl &&
+  curl -fsSL https://raw.githubusercontent.com/MaplumeX/vless-reality/main/install.sh |
+  sudo bash
 ```
 
 根据提示输入 REALITY 目标域名，例如：
@@ -70,6 +79,9 @@ sudo apt-get update && sudo apt-get install -y curl
 
 # CentOS / RHEL / Fedora
 sudo dnf install -y curl
+
+# Alpine Linux
+sudo apk add --no-cache bash curl
 ```
 
 安装成功后，脚本会显示：
@@ -150,11 +162,19 @@ REALITY 会将认证失败的连接转发到目标站点。避免选择可能让
 | GeoIP | `/usr/local/share/xray/geoip.dat` |
 | GeoSite | `/usr/local/share/xray/geosite.dat` |
 | systemd 服务 | `xray.service` |
+| OpenRC 服务 | `/etc/init.d/xray` |
 
-已有配置会备份为：
+systemd 环境中的单文件配置会备份为：
 
 ```text
 /usr/local/etc/xray/config.json.bak.YYYYMMDD-HHMMSS
+```
+
+OpenRC 官方安装器使用多文件配置目录。为了避免旧配置与新配置合并冲突，脚本会先
+备份整个目录，再写入单个 `config.json`：
+
+```text
+/usr/local/etc/xray.bak.YYYYMMDD-HHMMSS/
 ```
 
 脚本生成的路由规则与项目目标配置保持一致：
@@ -169,35 +189,28 @@ REALITY 会将认证失败的连接转发到目标站点。避免选择可能让
 
 ## 常用运维命令
 
-查看服务状态：
+systemd 常用命令：
 
 ```bash
 systemctl status xray --no-pager
-```
-
-查看最近日志：
-
-```bash
 journalctl -u xray.service -n 100 --no-pager
+journalctl -u xray.service -f
+systemctl restart xray.service
 ```
 
-持续查看日志：
+OpenRC/Alpine 常用命令：
 
 ```bash
-journalctl -u xray.service -f
+rc-service xray status
+rc-service xray restart
+rc-update add xray default
 ```
 
-校验配置：
+两种环境都可以直接校验配置：
 
 ```bash
 /usr/local/bin/xray run -test \
   -config /usr/local/etc/xray/config.json
-```
-
-重启服务：
-
-```bash
-systemctl restart xray.service
 ```
 
 查看版本：
@@ -242,15 +255,16 @@ sudo ./install.sh \
 
 ### 修改配置后如何恢复
 
-先找到最近的 `.bak.YYYYMMDD-HHMMSS` 文件，将其复制回
-`/usr/local/etc/xray/config.json`，然后校验配置并重启 Xray。恢复配置也会恢复
-当时使用的 UUID 和 REALITY 私钥。
+systemd 环境中，找到最近的 `.bak.YYYYMMDD-HHMMSS` 文件并复制回
+`/usr/local/etc/xray/config.json`。OpenRC 环境中，使用最近的
+`/usr/local/etc/xray.bak.YYYYMMDD-HHMMSS/` 恢复整个配置目录。恢复后校验配置
+并通过对应的服务管理器重启 Xray。
 
 ## 安全提示
 
 - 不要公开分享客户端导入链接、UUID、REALITY 私钥或 Short ID；
 - 建议定期更新 Xray；
-- 定期检查 `journalctl -u xray.service` 中的异常连接；
+- 定期检查 Xray 服务状态和日志中的异常连接；
 - 不要将来源不明的域名作为 REALITY 目标；
 - 本脚本会修改 Xray 配置及 UFW/firewalld 规则，请先了解服务器上已有服务。
 

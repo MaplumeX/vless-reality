@@ -3,7 +3,8 @@
 set -Eeuo pipefail
 umask 077
 
-readonly XRAY_INSTALL_URL="https://github.com/XTLS/Xray-install/raw/main/install-release.sh"
+readonly XRAY_INSTALL_URL_SYSTEMD="https://github.com/XTLS/Xray-install/raw/main/install-release.sh"
+readonly XRAY_INSTALL_URL_OPENRC="https://github.com/XTLS/Xray-install/raw/main/alpinelinux/install-release.sh"
 readonly GEOIP_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
 readonly GEOSITE_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
 readonly XRAY_BIN="/usr/local/bin/xray"
@@ -15,6 +16,7 @@ readonly PORT="443"
 reality_domain=""
 server_address=""
 force="false"
+init_system=""
 installer_tmp=""
 config_tmp=""
 asset_tmp_dir=""
@@ -109,6 +111,24 @@ has_tty() {
   { : </dev/tty && : >/dev/tty; } 2>/dev/null
 }
 
+detect_init_system() {
+  local pid_one=""
+
+  pid_one="$(ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]' || true)"
+  if command -v systemctl >/dev/null 2>&1 &&
+    { [[ "$pid_one" == "systemd" ]] || [[ -d /run/systemd/system ]]; }; then
+    init_system="systemd"
+  elif command -v rc-service >/dev/null 2>&1 &&
+    command -v rc-update >/dev/null 2>&1; then
+    [[ -f /etc/alpine-release ]] ||
+      die "检测到 OpenRC，但当前自动安装仅支持 Alpine Linux。"
+    init_system="openrc"
+  else
+    die "未检测到受支持的服务管理器；目前支持 systemd 和 OpenRC。"
+  fi
+  info "检测到服务管理器：${init_system}"
+}
+
 prompt_domain() {
   while [[ -z "$reality_domain" ]]; do
     has_tty || die "无法读取交互输入；请使用 --domain 指定 REALITY 域名。"
@@ -122,22 +142,26 @@ prompt_domain() {
 }
 
 install_dependencies() {
-  if command -v curl >/dev/null 2>&1 && command -v openssl >/dev/null 2>&1; then
+  if command -v curl >/dev/null 2>&1 &&
+    command -v openssl >/dev/null 2>&1 &&
+    command -v unzip >/dev/null 2>&1; then
     return
   fi
 
   info "安装基础依赖……"
-  if command -v apt-get >/dev/null 2>&1; then
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache bash curl openssl ca-certificates unzip
+  elif command -v apt-get >/dev/null 2>&1; then
     apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y curl openssl ca-certificates
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl openssl ca-certificates unzip
   elif command -v dnf >/dev/null 2>&1; then
-    dnf install -y curl openssl ca-certificates
+    dnf install -y curl openssl ca-certificates unzip
   elif command -v yum >/dev/null 2>&1; then
-    yum install -y curl openssl ca-certificates
+    yum install -y curl openssl ca-certificates unzip
   elif command -v zypper >/dev/null 2>&1; then
-    zypper --non-interactive install curl openssl ca-certificates
+    zypper --non-interactive install curl openssl ca-certificates unzip
   else
-    die "未找到受支持的包管理器，请先安装 curl、openssl 和 ca-certificates。"
+    die "未找到受支持的包管理器，请先安装 bash、curl、openssl、unzip 和 ca-certificates。"
   fi
 }
 
@@ -168,7 +192,14 @@ detect_public_address() {
 }
 
 confirm_overwrite() {
-  [[ -s "$CONFIG_FILE" ]] || return
+  local existing_configs=()
+
+  if [[ -d "$CONFIG_DIR" ]]; then
+    shopt -s nullglob
+    existing_configs=("${CONFIG_DIR}"/*.json)
+    shopt -u nullglob
+  fi
+  ((${#existing_configs[@]} > 0)) || return
   [[ "$force" == "true" ]] && return
 
   if ! has_tty; then
@@ -176,7 +207,7 @@ confirm_overwrite() {
   fi
 
   local answer=""
-  warn "检测到已有配置：${CONFIG_FILE}。继续会生成新凭据，并使旧导入链接失效。"
+  warn "检测到已有 Xray 配置。继续会先备份，再生成新凭据；旧导入链接将失效。"
   read -r -p "确认备份并覆盖吗？[y/N] " answer </dev/tty
   [[ "$answer" =~ ^[Yy]$ ]] || die "已取消。"
 }
@@ -195,10 +226,17 @@ check_port_available() {
 }
 
 install_xray() {
+  local installer_url="$XRAY_INSTALL_URL_SYSTEMD"
+
+  [[ "$init_system" == "systemd" ]] || installer_url="$XRAY_INSTALL_URL_OPENRC"
   installer_tmp="$(mktemp /tmp/xray-install.XXXXXX.sh)"
-  info "下载并运行 XTLS 官方 Xray 安装脚本……"
-  curl -fL --retry 3 --connect-timeout 10 -o "$installer_tmp" "$XRAY_INSTALL_URL"
-  bash "$installer_tmp" install
+  info "下载并运行适用于 ${init_system} 的 XTLS 官方 Xray 安装脚本……"
+  curl -fL --retry 3 --connect-timeout 10 -o "$installer_tmp" "$installer_url"
+  if [[ "$init_system" == "systemd" ]]; then
+    bash "$installer_tmp" install
+  else
+    ash "$installer_tmp"
+  fi
   [[ -x "$XRAY_BIN" ]] || die "Xray 安装失败：未找到 ${XRAY_BIN}。"
 }
 
@@ -231,6 +269,8 @@ generate_credentials() {
 
 write_config() {
   local backup=""
+  local old_json
+  local -a old_configs=()
 
   install -d -m 0755 "$CONFIG_DIR"
   config_tmp="$(mktemp /tmp/xray-config.XXXXXX.json)"
@@ -329,9 +369,25 @@ EOF
   info "校验 Xray 配置……"
   "$XRAY_BIN" run -test -config "$config_tmp"
 
-  if [[ -s "$CONFIG_FILE" ]]; then
-    backup="${CONFIG_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
-    cp -a -- "$CONFIG_FILE" "$backup"
+  shopt -s nullglob
+  old_configs=("${CONFIG_DIR}"/*.json)
+  shopt -u nullglob
+  if ((${#old_configs[@]} > 0)); then
+    if [[ "$init_system" == "openrc" ]]; then
+      backup="${CONFIG_DIR}.bak.$(date +%Y%m%d-%H%M%S)"
+      [[ ! -e "$backup" ]] || backup="${backup}.$$"
+      cp -a -- "$CONFIG_DIR" "$backup"
+      for old_json in "${old_configs[@]}"; do
+        rm -f -- "$old_json"
+      done
+    elif [[ -f "$CONFIG_FILE" ]]; then
+      backup="${CONFIG_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
+      cp -a -- "$CONFIG_FILE" "$backup"
+    else
+      backup="${CONFIG_DIR}.bak.$(date +%Y%m%d-%H%M%S)"
+      [[ ! -e "$backup" ]] || backup="${backup}.$$"
+      cp -a -- "$CONFIG_DIR" "$backup"
+    fi
     info "旧配置已备份到：${backup}"
   fi
   install -m 0644 "$config_tmp" "$CONFIG_FILE"
@@ -340,8 +396,12 @@ EOF
 allow_geodata_updates() {
   local service_user service_group
 
-  service_user="$(systemctl show xray.service -p User --value 2>/dev/null || true)"
-  [[ -n "$service_user" ]] || service_user="root"
+  if [[ "$init_system" == "systemd" ]]; then
+    service_user="$(systemctl show xray.service -p User --value 2>/dev/null || true)"
+    [[ -n "$service_user" ]] || service_user="root"
+  else
+    service_user="nobody"
+  fi
   if id "$service_user" >/dev/null 2>&1; then
     service_group="$(id -gn "$service_user")"
     chown "root:${service_group}" "$CONFIG_FILE"
@@ -368,13 +428,23 @@ open_firewall_port() {
 }
 
 start_xray() {
-  systemctl daemon-reload
-  systemctl enable xray.service >/dev/null
-  if ! systemctl restart xray.service; then
-    journalctl -u xray.service -n 30 --no-pager >&2 || true
-    die "Xray 启动失败，请根据上方日志排查。"
+  if [[ "$init_system" == "systemd" ]]; then
+    systemctl daemon-reload
+    systemctl enable xray.service >/dev/null
+    if ! systemctl restart xray.service; then
+      journalctl -u xray.service -n 30 --no-pager >&2 || true
+      die "Xray 启动失败，请根据上方日志排查。"
+    fi
+    systemctl is-active --quiet xray.service || die "Xray 服务未处于运行状态。"
+  else
+    rc-update add xray default >/dev/null
+    if rc-service xray status >/dev/null 2>&1; then
+      rc-service xray restart || die "Xray 重启失败，请运行 rc-service xray status 排查。"
+    else
+      rc-service xray start || die "Xray 启动失败，请运行 rc-service xray status 排查。"
+    fi
+    rc-service xray status >/dev/null 2>&1 || die "Xray 服务未处于运行状态。"
   fi
-  systemctl is-active --quiet xray.service || die "Xray 服务未处于运行状态。"
 }
 
 print_result() {
@@ -393,14 +463,18 @@ print_result() {
   printf 'SNI：%s\n\n' "$reality_domain"
   printf '客户端导入链接：\n%s\n\n' "$import_link"
   printf '服务端配置：%s\n' "$CONFIG_FILE"
-  printf '查看状态：systemctl status xray --no-pager\n'
+  if [[ "$init_system" == "systemd" ]]; then
+    printf '查看状态：systemctl status xray --no-pager\n'
+  else
+    printf '查看状态：rc-service xray status\n'
+  fi
 }
 
 main() {
   [[ "$(id -u)" -eq 0 ]] || die "请使用 root 权限运行，例如：sudo bash install.sh"
   [[ "$(uname -s)" == "Linux" ]] || die "本脚本仅支持 Linux。"
-  command -v systemctl >/dev/null 2>&1 || die "未检测到 systemd/systemctl。"
 
+  detect_init_system
   prompt_domain
   validate_domain "$reality_domain" || die "REALITY 域名格式不正确。"
   [[ -z "$server_address" ]] || validate_address "$server_address" ||
