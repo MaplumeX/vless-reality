@@ -229,7 +229,8 @@ install_xray() {
   local installer_url="$XRAY_INSTALL_URL_SYSTEMD"
 
   [[ "$init_system" == "systemd" ]] || installer_url="$XRAY_INSTALL_URL_OPENRC"
-  installer_tmp="$(mktemp /tmp/xray-install.XXXXXX.sh)"
+  # BusyBox mktemp（Alpine）要求 XXXXXX 位于模板末尾。
+  installer_tmp="$(mktemp /tmp/xray-install.XXXXXX)"
   info "下载并运行适用于 ${init_system} 的 XTLS 官方 Xray 安装脚本……"
   curl -fL --retry 3 --connect-timeout 10 -o "$installer_tmp" "$installer_url"
   if [[ "$init_system" == "systemd" ]]; then
@@ -273,7 +274,7 @@ write_config() {
   local -a old_configs=()
 
   install -d -m 0755 "$CONFIG_DIR"
-  config_tmp="$(mktemp /tmp/xray-config.XXXXXX.json)"
+  config_tmp="$(mktemp /tmp/xray-config.XXXXXX)"
   cat >"$config_tmp" <<EOF
 {
   "log": {
