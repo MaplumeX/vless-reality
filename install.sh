@@ -145,7 +145,7 @@ install_dependencies() {
   if command -v curl >/dev/null 2>&1 &&
     command -v openssl >/dev/null 2>&1 &&
     command -v unzip >/dev/null 2>&1; then
-    return
+    return 0
   fi
 
   info "安装基础依赖……"
@@ -175,7 +175,7 @@ detect_public_address() {
   if validate_address "$detected"; then
     server_address="$detected"
     info "探测到服务器公网地址：${server_address}"
-    return
+    return 0
   fi
 
   if has_tty; then
@@ -199,8 +199,8 @@ confirm_overwrite() {
     existing_configs=("${CONFIG_DIR}"/*.json)
     shopt -u nullglob
   fi
-  ((${#existing_configs[@]} > 0)) || return
-  [[ "$force" == "true" ]] && return
+  ((${#existing_configs[@]} > 0)) || return 0
+  [[ "$force" == "true" ]] && return 0
 
   if ! has_tty; then
     die "已存在 Xray 配置；如需覆盖，请添加 --force。"
@@ -215,9 +215,9 @@ confirm_overwrite() {
 check_port_available() {
   local listeners=""
 
-  command -v ss >/dev/null 2>&1 || return
+  command -v ss >/dev/null 2>&1 || return 0
   listeners="$(ss -H -ltnp "sport = :${PORT}" 2>/dev/null || true)"
-  [[ -z "$listeners" ]] && return
+  [[ -z "$listeners" ]] && return 0
   if grep -q '"xray"' <<<"$listeners"; then
     warn "TCP ${PORT} 当前由 Xray 占用，将更新现有节点配置。"
   else
