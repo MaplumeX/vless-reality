@@ -14,7 +14,7 @@
 - 自动探测服务器公网 IPv4，IPv4 不可用时尝试 IPv6；
 - 下载 Loyalsoldier 的 `geoip.dat` 和 `geosite.dat`；
 - 每周一 04:30 通过 Xray 自动更新 geodata；
-- 写入前使用 Xray 内核校验配置，并备份已有配置；
+- 写入前使用 Xray 内核校验配置；
 - 检查 TCP 443 端口是否被其他程序占用；
 - 在已启用 UFW 或 firewalld 时自动放行 TCP 443；
 - 启动 Xray 并输出客户端导入链接。
@@ -164,18 +164,9 @@ REALITY 会将认证失败的连接转发到目标站点。避免选择可能让
 | systemd 服务 | `xray.service` |
 | OpenRC 服务 | `/etc/init.d/xray` |
 
-systemd 环境中的单文件配置会备份为：
-
-```text
-/usr/local/etc/xray/config.json.bak.YYYYMMDD-HHMMSS
-```
-
-OpenRC 官方安装器使用多文件配置目录。为了避免旧配置与新配置合并冲突，脚本会先
-备份整个目录，再写入单个 `config.json`：
-
-```text
-/usr/local/etc/xray.bak.YYYYMMDD-HHMMSS/
-```
+重新安装时，systemd 环境会直接覆盖 `config.json`，不保留备份。OpenRC 官方安装器
+使用多文件配置目录；为了避免旧配置与新配置合并冲突，脚本会删除目录中的旧 JSON
+配置，再写入单个 `config.json`，同样不保留备份。
 
 脚本生成的路由规则与项目目标配置保持一致：
 
@@ -252,13 +243,6 @@ sudo ./install.sh \
   --address node.example.net \
   --force
 ```
-
-### 修改配置后如何恢复
-
-systemd 环境中，找到最近的 `.bak.YYYYMMDD-HHMMSS` 文件并复制回
-`/usr/local/etc/xray/config.json`。OpenRC 环境中，使用最近的
-`/usr/local/etc/xray.bak.YYYYMMDD-HHMMSS/` 恢复整个配置目录。恢复后校验配置
-并通过对应的服务管理器重启 Xray。
 
 ## 安全提示
 

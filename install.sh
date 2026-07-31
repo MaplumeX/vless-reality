@@ -209,8 +209,8 @@ confirm_overwrite() {
   fi
 
   local answer=""
-  warn "检测到已有 Xray 配置。继续会先备份，再生成新凭据；旧导入链接将失效。"
-  read -r -p "确认备份并覆盖吗？[y/N] " answer </dev/tty
+  warn "检测到已有 Xray 配置。继续会直接覆盖且不保留备份，并生成新凭据；旧导入链接将失效。"
+  read -r -p "确认直接覆盖吗？[y/N] " answer </dev/tty
   [[ "$answer" =~ ^[Yy]$ ]] || die "已取消。"
 }
 
@@ -271,7 +271,6 @@ generate_credentials() {
 }
 
 write_config() {
-  local backup=""
   local old_json
   local -a old_configs=()
 
@@ -374,26 +373,13 @@ EOF
   info "校验 Xray 配置……"
   "$XRAY_BIN" run -test -config "$config_tmp"
 
-  shopt -s nullglob
-  old_configs=("${CONFIG_DIR}"/*.json)
-  shopt -u nullglob
-  if ((${#old_configs[@]} > 0)); then
-    if [[ "$init_system" == "openrc" ]]; then
-      backup="${CONFIG_DIR}.bak.$(date +%Y%m%d-%H%M%S)"
-      [[ ! -e "$backup" ]] || backup="${backup}.$$"
-      cp -a -- "$CONFIG_DIR" "$backup"
-      for old_json in "${old_configs[@]}"; do
-        rm -f -- "$old_json"
-      done
-    elif [[ -f "$CONFIG_FILE" ]]; then
-      backup="${CONFIG_FILE}.bak.$(date +%Y%m%d-%H%M%S)"
-      cp -a -- "$CONFIG_FILE" "$backup"
-    else
-      backup="${CONFIG_DIR}.bak.$(date +%Y%m%d-%H%M%S)"
-      [[ ! -e "$backup" ]] || backup="${backup}.$$"
-      cp -a -- "$CONFIG_DIR" "$backup"
-    fi
-    info "旧配置已备份到：${backup}"
+  if [[ "$init_system" == "openrc" ]]; then
+    shopt -s nullglob
+    old_configs=("${CONFIG_DIR}"/*.json)
+    shopt -u nullglob
+    for old_json in "${old_configs[@]}"; do
+      rm -f -- "$old_json"
+    done
   fi
   install -m 0644 "$config_tmp" "$CONFIG_FILE"
 }
