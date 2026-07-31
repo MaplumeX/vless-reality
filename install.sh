@@ -19,11 +19,13 @@ force="false"
 init_system=""
 installer_tmp=""
 config_tmp=""
+config_tmp_dir=""
 asset_tmp_dir=""
 
 cleanup() {
   [[ -z "${installer_tmp}" ]] || rm -f -- "${installer_tmp}"
   [[ -z "${config_tmp}" ]] || rm -f -- "${config_tmp}"
+  [[ -z "${config_tmp_dir}" ]] || rm -rf -- "${config_tmp_dir}"
   [[ -z "${asset_tmp_dir}" ]] || rm -rf -- "${asset_tmp_dir}"
 }
 trap cleanup EXIT
@@ -274,7 +276,9 @@ write_config() {
   local -a old_configs=()
 
   install -d -m 0755 "$CONFIG_DIR"
-  config_tmp="$(mktemp /tmp/xray-config.XXXXXX)"
+  # BusyBox mktemp 要求 XXXXXX 位于末尾，而 Xray 又依赖 .json 扩展名识别格式。
+  config_tmp_dir="$(mktemp -d /tmp/xray-config.XXXXXX)"
+  config_tmp="${config_tmp_dir}/config.json"
   cat >"$config_tmp" <<EOF
 {
   "log": {
