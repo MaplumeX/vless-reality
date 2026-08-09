@@ -29,6 +29,7 @@
 | Flow | `xtls-rprx-vision` |
 | 监听地址 | `::` |
 | 监听端口 | `443` |
+| REALITY 回落入口 | `127.0.0.1:4431` |
 | 客户端指纹 | `chrome` |
 | 国内域名与 IP | 阻断 |
 | Google 及 Google CN 规则 | 直连 |
@@ -170,10 +171,12 @@ REALITY 会将认证失败的连接转发到目标站点。避免选择可能让
 
 脚本生成的路由规则与项目目标配置保持一致：
 
-1. `geosite:google` 和 `geosite:google-cn` 使用 `direct`；
-2. `geosite:cn` 使用 `block`；
-3. `geoip:cn` 使用 `block`；
-4. 其他流量默认直连。
+1. REALITY 回落流量仅允许访问所配置的目标域名；
+2. 其他 REALITY 回落流量使用 `block`；
+3. `geosite:google` 和 `geosite:google-cn` 使用 `direct`；
+4. `geosite:cn` 使用 `block`；
+5. `geoip:cn` 使用 `block`；
+6. 其他流量默认直连。
 
 这意味着节点无法访问大多数中国大陆域名和 IP。如果不需要这一限制，请安装后自行
 修改 `routing.rules`，然后重新校验并启动服务。

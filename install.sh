@@ -299,6 +299,24 @@ write_config() {
   },
   "inbounds": [
     {
+      "tag": "reality-fallback",
+      "listen": "127.0.0.1",
+      "port": 4431,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "${reality_domain}",
+        "port": 443,
+        "network": "tcp"
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "tls"
+        ],
+        "routeOnly": true
+      }
+    },
+    {
       "tag": "vless-in",
       "listen": "::",
       "port": ${PORT},
@@ -317,7 +335,7 @@ write_config() {
         "security": "reality",
         "realitySettings": {
           "show": false,
-          "target": "${reality_domain}:443",
+          "target": "127.0.0.1:4431",
           "xver": 0,
           "serverNames": [
             "${reality_domain}"
@@ -343,6 +361,23 @@ write_config() {
   "routing": {
     "domainStrategy": "IPIfNonMatch",
     "rules": [
+      {
+        "type": "field",
+        "inboundTag": [
+          "reality-fallback"
+        ],
+        "domain": [
+          "full:${reality_domain}"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "reality-fallback"
+        ],
+        "outboundTag": "block"
+      },
       {
         "type": "field",
         "domain": [
